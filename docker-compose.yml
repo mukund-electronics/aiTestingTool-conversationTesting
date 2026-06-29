@@ -1,0 +1,54 @@
+services:
+
+  backend:
+    build: .
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - conv_tester_data:/data
+    environment:
+      # Absolute path inside the named volume — four slashes required for SQLite
+      DATABASE_URL: "sqlite+aiosqlite:////data/conv_tester.db"
+      API_HOST: "0.0.0.0"
+      API_PORT: "8000"
+      # Fernet key for encrypting stored API keys (optional; plaintext if empty)
+      SECRET_KEY: "${SECRET_KEY:-}"
+      # Runner defaults (all optional — these match the application defaults)
+      DEFAULT_MAX_TURNS: "${DEFAULT_MAX_TURNS:-10}"
+      DEFAULT_HTTP_TIMEOUT: "${DEFAULT_HTTP_TIMEOUT:-30}"
+      DEFAULT_HTTP_RETRIES: "${DEFAULT_HTTP_RETRIES:-3}"
+    # Lets the backend reach an LLM running on the host (e.g. LM Studio/Ollama)
+    # via http://host.docker.internal:<port>/v1. Automatic on Docker Desktop;
+    # this mapping also enables it on Linux Docker Engine.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  ui:
+    build: .
+    command: >
+      streamlit run ui/app.py
+        --server.port 8501
+        --server.address 0.0.0.0
+        --server.headless true
+    ports:
+      - "${UI_PORT:-8501}:8501"
+    environment:
+      # Docker's internal DNS resolves the service name "backend" automatically.
+      # All Streamlit HTTP calls are server-side, so this internal URL works fine.
+      BACKEND_URL: "http://backend:8000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+# Named volume — survives `docker compose down`, removed only by `docker compose down -v`
+volumes:
+  conv_tester_data:

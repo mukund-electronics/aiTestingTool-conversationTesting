@@ -1,0 +1,48 @@
+services:
+
+  backend:
+    image: conv-tester:2.0.0.2
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - conv_tester_data:/data
+    environment:
+      DATABASE_URL: "sqlite+aiosqlite:////data/conv_tester.db"
+      API_HOST: "0.0.0.0"
+      API_PORT: "8000"
+      SECRET_KEY: "${SECRET_KEY:-}"
+      DEFAULT_MAX_TURNS: "${DEFAULT_MAX_TURNS:-10}"
+      DEFAULT_HTTP_TIMEOUT: "${DEFAULT_HTTP_TIMEOUT:-30}"
+      DEFAULT_HTTP_RETRIES: "${DEFAULT_HTTP_RETRIES:-3}"
+    # Lets the backend reach an LLM running on the host (e.g. LM Studio/Ollama)
+    # via http://host.docker.internal:<port>/v1. Automatic on Docker Desktop;
+    # this mapping also enables it on Linux Docker Engine.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  ui:
+    image: conv-tester:2.0.0.2
+    command: >
+      streamlit run ui/app.py
+        --server.port 8501
+        --server.address 0.0.0.0
+        --server.headless true
+    ports:
+      - "${UI_PORT:-8501}:8501"
+    environment:
+      BACKEND_URL: "http://backend:8000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  conv_tester_data:
